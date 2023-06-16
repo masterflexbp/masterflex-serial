@@ -1,0 +1,2 @@
+pyserial-asyncio==0.6
+pyserial==3.5
