@@ -23,7 +23,7 @@ MasterflexSerial, the Python module, is used to communicate with Masterflex Pump
 
 To control a Masterflex pump using serial communication, perform the following steps: 
 
-- Download the excutable masterflex.exe from the repository <url>https://github.com/masterflexbp/masterflex-serial/releases/tag/V1.0</url>
+- Download the excutable masterflex.exe from the repository <url>[https://github.com/masterflexbp/masterflex-serial/releases/tag/V1.0.0](https://github.com/masterflexbp/masterflex-serial/releases/tag/v1.0.0)</url>
 - Click Start Menu of the PC, start either `PowerShell` or `Command Prompt`
 - Change path to the location of the `masterflex.exe` file using the following command: `cd <directory_path>`
 - Run the Serial Comm executable by entering the following command: `.\masterflex.exe COMx`; where `COMx` is the aquired through the previous step. In the below example, the `COMx` is `COM7`
