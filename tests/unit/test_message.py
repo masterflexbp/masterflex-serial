@@ -4,7 +4,7 @@ import json
 import pytest
 
 
-from masterflexserial.message import SentMessage, SentMessageId, SentMessageType,\
+from masterflexserial.message import SentMessage, SentMessageId, SentMessageType, \
     ReceivedMessage, ReceivedMessageId, create_message
 
 

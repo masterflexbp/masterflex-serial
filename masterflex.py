@@ -13,25 +13,45 @@ def cmd_help():
     """Display the supported commands and how to use them."""
     print("Supported commands:")
 
-    print("enable          : Enable Pump's Serial Comms module")
-    print("disable         : Disable Pump's Serial Comms module")
-    print("status          : Get the status of the pump")
-    print("start           : Start pump")
-    print("stop            : Stop pump")
-    print("dir-cw          : Set pump's direction to Clockwise")
-    print("dir-ccw         : Set pump's direction to Counter-clockwise")
-    print("reset-cumulative: Reset pump's cumulative volume to zero")
-    print("speedp          : Get the pump's speed in percentage")
-    print("speedp XX.X     : Set the pump's speed in percentage")
-    print("speedr          : Get the pump's speed in RPM")
-    print("speedr XX.XX    : Set pump's speed in RPM ")
-    print("volume          : Get pump volume in current unit set")
-    print("volume-rev      : Get pump volume in rev")
-    print("unit-index      : Get the pump's flow unit index")
-    print("unit-index XX   : Set the pump's flow unit index")
-    print("id [id]         : Set the pump id")
-    print("q, quit,exit    : to quit the program")
-    print("?, h , help     : for help")
+    print("enable              : Enable Pump's Serial Comms module")
+    print("disable             : Disable Pump's Serial Comms module")
+    print("status              : Get the status of the pump")
+    print("dispense-status     : Get dispense status")
+    print("start               : Start pump")
+    print("stop                : Stop pump")
+    print("dir-cw              : Set pump's direction to Clockwise")
+    print("dir-ccw             : Set pump's direction to Counter-clockwise")
+    print("speedp              : Get the pump's speed in percentage")
+    print("speedp XX.X         : Set the pump's speed in percentage")
+    print("speedr              : Get the pump's speed in RPM")
+    print("speedr XX.XX        : Set pump's speed in RPM ")
+    print("volume              : Get pump volume in current unit set")
+    print("volume-rev          : Get pump volume in rev")
+    print("unit-index          : Get the pump's flow unit index")
+    print("unit-index XX       : Set the pump's flow unit index")
+    print("id [id]             : Set the pump id")
+    print("reset-cumulative    : Reset pump's cumulative volume to zero")
+    print("panel-active        : Sets control panel to manual operation")
+    print("panel-inactive      : Sets control panel to inactive")
+    print("mode-continuous     : Set dispense mode to continuous")
+    print("mode-time           : Set dispense mode to time")
+    print("on-time             : Get the pump on-time in full")
+    print("on-time HH:MM:SS.s  : Set the pump on-time in full")
+    print("on-time-ds          : Get the pump on-time in 1/10 seconds")
+    print("on-time-ds XXXX     : Set the pump on-time in 1/10 seconds")
+    print("on-time-m XXX       : Set pump on time in minutes")
+    print("on-time-hr XX       : Set pump on time in hours")
+    print("off-time            : Get off-time in full")
+    print("off-time HH:MM:SS.s : Set off-time in full")
+    print("software-version    : Get the software version of the pump")
+    print('model-serial-version: Get the pump model and serial version of the pump')
+    print("store-configs       : Set pump configurations to current values")
+    print("restore-configs     : Set pump configurations to default values")
+    print("batch-count         : Get the pump's Batch Count.")
+    print("batch-total XXXXX   : Set the pump's Batch Total.")
+    print("reset-batch         : Reset batch count to zero")
+    print("q, quit,exit        : to quit the program")
+    print("?, h , help         : for help")
 
 
 PREFIX = "mflx# "
@@ -109,11 +129,65 @@ async def console_cmd(pump: MasterflexSerial):
                 print(PREFIX + "Get pump flow rate unit index")
                 response = await pump.unit_index()
 
+            elif args[0] == 'on-time':
+                print(PREFIX + "Get on-time in full")
+                response = await pump.on_time_full()
+            elif args[0] == "panel-active":
+                print(PREFIX + "Sets control panel to manual operation.")
+                response = await pump.set_panel_active(True)
+
+            elif args[0] == "panel-inactive":
+                print(PREFIX + "Sets control panel to inactive.")
+                response = await pump.set_panel_active(False)
+
+            elif args[0] == 'mode-continuous':
+                print(PREFIX + "Set dispense mode to continuous")
+                response = await pump.set_dispense_mode('continuous')
+
+            elif args[0] == 'mode-time':
+                print(PREFIX + "Set dispense mode to time")
+                response = await pump.set_dispense_mode('time')
+
+            elif args[0] == 'software-version':
+                print(PREFIX + "Get software version of the pump")
+                response = await pump.get_software_version()
+
+            elif args[0] == 'model-serial-version':
+                print(PREFIX + "Get the pump model and serial version of the pump")
+                response = await pump.get_version__model()
+
+            elif args[0] == "store-configs":
+                print(PREFIX + "Storing pump configurations...")
+                response = await pump.store_configs()
+
+            elif args[0] == "restore-configs":
+                print(PREFIX + "Restoring pump configurations to default...")
+                response = await pump.restore_configs()
+
+            elif args[0] == 'reset-batch':
+                print(PREFIX + "Reset batch count to zero")
+                response = await pump.reset_batch()
+            elif args[0] == 'on-time-ds':
+                print(PREFIX + "Get on-time in 1/10 seconds")
+                response = await pump.on_time_decisecond()
+
+            elif args[0] == 'dispense-status':
+                print(PREFIX + "Get dispense status")
+                response = await pump.dispense_status()
+
+            elif args[0] == 'batch-count':
+                print(PREFIX + "Get batch count")
+                response = await pump.batch_count()
+
             elif args[0] in ['q', 'Q', 'quit', 'exit']:
                 try:
                     exit(0)
                 except Exception as ex:
                     print("Exit program with exception %s" % ex)
+
+            elif args[0] == 'off-time':
+                print(PREFIX + "Get off-time in full")
+                response = await pump.off_time_full()
 
             elif args[0] in ['?', 'h', 'help']:
                 cmd_help()
@@ -137,6 +211,28 @@ async def console_cmd(pump: MasterflexSerial):
             elif args[0] == 'unit-index':
                 print(PREFIX + "Set pump flow rate unit index")
                 response = await pump.unit_index(args[1])
+
+            elif args[0] == 'on-time':
+                print(PREFIX + "set on-time in full")
+                response = await pump.on_time_full(args[1])
+            elif args[0] == 'off-time':
+                print(PREFIX + "Set off-time in full")
+                response = await pump.off_time_full(args[1])
+
+            elif args[0] == 'on-time-m':
+                print(PREFIX + "Set pump on time in minutes")
+                response = await pump.on_time_min(args[1])
+
+            elif args[0] == 'on-time-hr':
+                print(PREFIX + "Set pump on time in hours")
+                response = await pump.on_time_hr(args[1])
+            elif args[0] == 'on-time-ds':
+                print(PREFIX + "Set on-time in 1/10 seconds")
+                response = await pump.on_time_decisecond(args[1])
+
+            elif args[0] == 'batch-total':
+                print(PREFIX + "Set batch total")
+                response = await pump.batch_count(args[1])
 
             else:
                 print(PREFIX + argument + ": command is not supported")

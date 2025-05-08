@@ -33,6 +33,22 @@ class SentMessageId(enum.Enum):
     VOLUME_REV = "RB"
     UNIT_INDEX = "RA"
     RESET_CUMULATIVE = "W"
+    ON_TIME_FULL = "RV"
+    SET_PANEL_ACTIVE = "A"
+    SET_PANEL_INACTIVE = "B"
+    SET_DISPENSE_CONTINUOUS = "L"
+    SET_DISPENSE_TIME = "N"
+    GET_SOFTWARE_VERSION = "("
+    SET_ON_TIME_MIN = "VM"
+    SET_ON_TIME_HR = "VH"
+    MODEL_AND_VERSION = "#"
+    STORE_CONFIGS = "*"
+    RESTORE_CONFIGS = "0"
+    RESET_BATCH_COUNT = 'R"'
+    DISPENSE_STATUS = "E"
+    OFF_TIME_FULL = "RT"
+    ON_TIME_DECISEC = "V"
+    BATCH_COUNT = '"'
 
 
 class SentMessageType(enum.Enum):

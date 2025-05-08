@@ -19,7 +19,7 @@ config = dict(
         'License :: New-BSD',
         'Operating System :: POSIX :: Windows',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.7 or above',
+        'Programming Language :: Python :: 3.8 or above',
     ],
     # Necessary for `python setup.py install` to find internal packages.
     dependency_links=[
