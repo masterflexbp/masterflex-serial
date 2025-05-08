@@ -5,7 +5,7 @@ import json
 import logging
 import serial
 import serial_asyncio
-
+import re
 from masterflexserial.protocol import SerialProtocol, DIR
 
 from masterflexserial.message import SentMessage
@@ -15,6 +15,9 @@ from masterflexserial.message import ReceivedMessage
 from masterflexserial.message import create_message
 
 logger = logging.getLogger(__name__)
+
+# Pattern for matching a time string of the form "HH:MM:SS.s"
+TIME_STRING_PATTERN = r"^\d{2}:\d{2}:\d{2}\.\d{1}$"
 
 
 class MasterflexSerial:
@@ -422,3 +425,353 @@ class MasterflexSerial:
             except ValueError:
                 return {"result": "Invalid",
                         "error": "Invalid param. Valid inputs: integer"}
+
+    async def on_time_full(self, time: str = None) -> json:
+        """Set/Get the pump on-time in full.
+
+        Args:
+            - time: - None: to GET pump on-time in full.
+                    - [00:00:00.1, 99:59:59.9]: to SET the pump on-time in full.
+        Returns:
+            - A json object for get pump on-time:
+              {
+               "result": "data",
+               "on-time": value,
+               "unit": "HH:MM:SS.X"
+              }
+            - Or {"result": "OK"} for successfully set of on-time.
+            - Or {"result": "Invalid", "error": "error message"} for invalid on-time value.
+        """
+
+        if time is None:
+            return await self._send_message(
+                SentMessage(SentMessageId.ON_TIME_FULL, SentMessageType.RESP_GET), None, self.addr)
+
+        if not isinstance(time, str):
+            return {"result": "Invalid", "error": "Invalid param. Valid inputs: string"}
+
+        if not re.match(TIME_STRING_PATTERN, time):
+            return {"result": "Invalid", "error": "Invalid time format. Expected format: HH:MM:SS.X"}
+
+        try:
+            # Split the time string into hours, minutes, seconds, and fractional
+            hours, minutes, _decimal = time.split(":")
+            seconds, fractional = _decimal.split(".")
+
+            # Convert to total seconds
+            total_seconds = int(hours) * 3600 + int(minutes) * 60 + int(seconds)
+            result = float(f"{total_seconds}.{fractional}")
+
+            if not 0 < result <= 359999.9:
+                return {"result": "Invalid", "error": "Time not within the range"}
+
+            result = int(f"{hours}{minutes}{seconds}{fractional}")
+            payload = "{:07}".format(result)
+
+            return await self._send_message(
+                SentMessage(SentMessageId.ON_TIME_FULL, SentMessageType.RESP_SET), payload, self.addr)
+        except ValueError:
+            return {"result": "Invalid", "error": "Invalid time format. Expected format: HH:MM:SS.X"}
+
+    async def set_panel_active(self, enable: bool) -> dict:
+        """
+        Set control panel to manual operation.
+
+        Args:
+            arg (bool): True to set to active, False to set to inactive.
+
+        Returns:
+            dict: JSON-like dictionary with the result of the command
+        """
+
+        if not isinstance(enable, bool):
+            return {"result": "Invalid", "error": "Invalid param. Valid inputs: True or False"}
+
+        command = SentMessageId.SET_PANEL_ACTIVE if enable else SentMessageId.SET_PANEL_INACTIVE
+
+        return await self._send_message(
+            SentMessage(command, SentMessageType.RESP_SET),
+            None,
+            self.addr
+        )
+
+    async def set_dispense_mode(self, mode: str) -> json:
+        """Set pumps dispense mode.
+
+        Args:
+            mode: to SET pump's dispense mode.
+                 (e.g 'continuous' or 'time')
+
+        Returns:
+            - {"result": "OK"} for successfully set mode.
+            - Or {"result": "Invalid", "error": "Invalid param. Valid inputs: 'continuous' or 'time'"}
+              for invalid direction value.
+        """
+
+        if mode == 'continuous':
+            return await self._send_message(
+                SentMessage(SentMessageId.SET_DISPENSE_CONTINUOUS, SentMessageType.RESP_SET), None, self.addr)
+        elif mode == 'time':
+            return await self._send_message(
+                SentMessage(SentMessageId.SET_DISPENSE_TIME, SentMessageType.RESP_SET), None, self.addr)
+        else:
+            return {"result": "Invalid",
+                    "error": "Invalid param. Valid inputs: 'continuous' or 'time'"}
+
+    async def get_software_version(self):
+        """Get the software version of the pump.
+
+        Returns:
+            {"result": <string>, "version": <string>}
+            {"result": <string>, "error": <string>}
+        """
+
+        return await self._send_message(
+            SentMessage(SentMessageId.GET_SOFTWARE_VERSION, SentMessageType.RESP_GET), None, self.addr)
+
+    async def on_time_min(self, minutes: int) -> json:
+        """Set the pump on time in minutes.
+
+        Args:
+            minutes: - [0, 999]: the value set to be the on time in minutes.
+
+        Returns:
+            - {"result": "OK"} for successfully set of flow unit index.
+            - Or {"result": "Invalid", "error": "error message"} for invalid flow unit index value.
+        """
+
+        if not isinstance(minutes, str) and not isinstance(minutes, int):
+            return {"result": "Invalid", "error": "Invalid param. Valid inputs: integer"}
+
+        try:
+            minutes = int(minutes)
+            if 1 <= minutes <= 999:
+                # Conversion to pass in correct payload value
+                payload = "{:03}".format(minutes)
+
+                return await self._send_message(
+                    SentMessage(SentMessageId.SET_ON_TIME_MIN, SentMessageType.RESP_SET), payload, self.addr)
+            else:
+                return {"result": "Invalid",
+                        "error": "Value out of range. Pumps flow unit index range: 1 to 999"}
+        except ValueError:
+            return {"result": "Invalid",
+                    "error": "Invalid param. Valid inputs: integer"}
+
+    async def on_time_hr(self, hours: int) -> json:
+        """Set the pump on time in hours.
+
+        Args:
+            hours: - [0, 99]: the value set to be the on time in hours.
+        Returns:
+            - {"result": "OK"} for successfully set of on time in hours.
+            - Or {"result": "Invalid", "error": "error message"} for invalid time value.
+        """
+
+        if not isinstance(hours, str) and not isinstance(hours, int):
+            return {"result": "Invalid", "error": "Invalid param. Valid inputs: integer"}
+
+        try:
+            hours = int(hours)
+            if 1 <= hours <= 99:
+                # Conversion to pass in correct payload value
+                payload = "{:02}".format(hours)
+
+                return await self._send_message(
+                    SentMessage(SentMessageId.SET_ON_TIME_HR, SentMessageType.RESP_SET), payload, self.addr)
+            else:
+                return {"result": "Invalid",
+                        "error": "Value out of range. On Time hour range: 1 to 99"}
+        except ValueError:
+            return {"result": "Invalid",
+                    "error": "Invalid param. Valid inputs: integer"}
+
+    async def get_version__model(self) -> json:
+        """Get the pump software version and model.
+
+        Returns:
+            {"result": "data", "Model": <string>, "SerialComm Version": <int>}
+            {"result": <string>, "error": <string>}
+        """
+
+        return await self._send_message(
+            SentMessage(SentMessageId.MODEL_AND_VERSION, SentMessageType.RESP_GET), None, self.addr)
+
+    async def store_configs(self) -> dict:
+        """Store the current pump configurations.
+
+        Returns:
+            dict: JSON-like dictionary with the result of the command.
+                - {"result": "OK"} if the command is successful.
+                - {"result": "Error", "error": "Error message"} for failures.
+        """
+        return await self._send_message(
+            SentMessage(SentMessageId.STORE_CONFIGS, SentMessageType.RESP_SET),
+            None,
+            self.addr
+        )
+
+    async def restore_configs(self) -> dict:
+        """
+        Restores the pump configurations to the default state.
+
+        Returns:
+            dict: JSON-like dictionary with the result of the command.
+                - {"result": "OK"} if the command is successful.
+                - {"result": "Error", "error": "Error message"} for failures.
+        """
+        return await self._send_message(
+            SentMessage(SentMessageId.RESTORE_CONFIGS, SentMessageType.RESP_SET),
+            None,
+            self.addr
+        )
+
+    async def reset_batch(self) -> json:
+        """Reset batch count set to zero-value.
+
+        Returns:
+            - {"result": "OK"} for successfully resetting batch count
+            - {"result": "Invalid"} for not a valid command
+            - {"result": "Not in Serial Comms mode"} if the pump is not in Serial Comms mode
+        """
+
+        return await self._send_message(
+            SentMessage(SentMessageId.RESET_BATCH_COUNT, SentMessageType.RESP_SET), None, self.addr)
+
+    async def dispense_status(self) -> json:
+        """Get the pump dispense status.
+
+        Returns:
+            {"result": "data", "status": <string>}
+            {"result": <string>, "error": <string>}
+        """
+
+        return await self._send_message(
+            SentMessage(SentMessageId.DISPENSE_STATUS, SentMessageType.RESP_GET), None, self.addr)
+
+    async def off_time_full(self, time: str = None) -> json:
+        """Set/Get the pump off-time in full.
+
+        Args:
+            - time: - None: to GET pump off-time in full.
+                    - [00:00:00.1, 99:59:59.9]: to SET the pump off-time in full.
+        Returns:
+            - A json object for get pump off-time:
+              {
+               "result": "data",
+               "off-time": value,
+               "unit": "HH:MM:SS.X"
+              }
+            - Or {"result": "OK"} for successfully set of off-time.
+            - Or {"result": "Invalid", "error": "error message"} for invalid off-time value.
+        """
+
+        if time is None:
+            return await self._send_message(
+                SentMessage(SentMessageId.OFF_TIME_FULL, SentMessageType.RESP_GET), None, self.addr)
+
+        if not isinstance(time, str):
+            return {"result": "Invalid", "error": "Invalid param. Valid inputs: string"}
+
+        if not re.match(TIME_STRING_PATTERN, time):
+            return {"result": "Invalid", "error": "Invalid time format. Expected format: HH:MM:SS.X"}
+
+        try:
+            # Split the time string into hours, minutes, seconds, and fractional
+            hours, minutes, _decimal = time.split(":")
+            seconds, fractional = _decimal.split(".")
+
+            # Convert to total seconds
+            total_seconds = int(hours) * 3600 + int(minutes) * 60 + int(seconds)
+            result = int(f"{total_seconds}{fractional}")
+
+            if not 0 < result <= 3599999:
+                return {"result": "Invalid", "error": "Time not within the range"}
+
+            result = int(f"{hours}{minutes}{seconds}{fractional}")
+            payload = "{:07}".format(result)
+
+            return await self._send_message(
+                SentMessage(SentMessageId.OFF_TIME_FULL, SentMessageType.RESP_SET), payload, self.addr)
+        except ValueError:
+            return {"result": "Invalid", "error": "Invalid time format. Expected format: HH:MM:SS.X"}
+
+    async def on_time_decisecond(self, deciseconds: int = None) -> json:
+        """Set/Get the pump on-time in 1/10 seconds.
+
+        Args:
+            - deciseconds: - None: to GET pump on-time in 1/10 seconds.
+                    - [0, 9999]: to SET the pump on-time in 1/10 seconds.
+        Returns:
+            - A json object for get pump on-time:
+              {
+               "result": "data",
+               "on-time": value,
+               "unit": "1/10 sec"
+              }
+            - Or {"result": "OK"} for successfully set of on-time.
+            - Or {"result": "Invalid", "error": "error message"} for invalid on-time value.
+        """
+
+        if deciseconds is None:
+            return await self._send_message(
+                SentMessage(SentMessageId.ON_TIME_DECISEC, SentMessageType.RESP_GET), None, self.addr)
+
+        if not isinstance(deciseconds, str) and not isinstance(deciseconds, int):
+            return {"result": "Invalid", "error": "Invalid param. Valid inputs: integer"}
+
+        try:
+            deciseconds = int(deciseconds)  # Convert to integer
+            if 1 <= deciseconds <= 9999:
+                # Conversion to pass in correct payload value
+                payload = "{:04}".format(deciseconds)
+
+                return await self._send_message(
+                    SentMessage(SentMessageId.ON_TIME_DECISEC, SentMessageType.RESP_SET), payload, self.addr)
+            else:
+                return {"result": "Invalid",
+                        "error": "Value out of range. Pumps on time deciseconds range: 0 to 9999"}
+        except ValueError:
+            return {"result": "Invalid", "error": "Invalid param. Valid inputs: integer"}
+
+    async def batch_count(self, batch_count: int = None) -> dict:
+        """Get/Set the pump's Batch Total.
+
+        Args:
+            batch_count:
+                - None: Get batch count
+                - [0, 99999]: Integer value representing the Batch Total to set.
+
+        Returns:
+            dict:
+                JSON-formatted response from the pump
+                {
+                    "result": "data",
+                    "count": count,
+                    "total": total
+                }
+            - Or {"result": "OK"} for successfully set of batch count.
+            - Or {"result": "Invalid", "error": "error message"} for invalid batch count value.
+        """
+
+        if batch_count is None:
+            return await self._send_message(
+                SentMessage(SentMessageId.BATCH_COUNT, SentMessageType.RESP_GET), None, self.addr)
+
+        def is_valid_integer(value: str) -> bool:
+            if value.startswith("-"):  # Handle negatives
+                return value[1:].isdigit()  # Check digits after the '-'
+            return value.isdigit()  # For positive numbers
+
+        if not is_valid_integer(str(batch_count)):
+            return {"result": "Invalid", "error": "Not an integer"}
+
+        batch_count = int(batch_count)
+        if not (0 <= batch_count <= 99999):
+            return {"result": "Invalid", "error": "Value must be between 0 and 99999"}
+
+        # Create payload with zero-padded 5-digit value
+        payload = "{:05}".format(batch_count)
+        # Send the command to the pump
+        return await self._send_message(
+            SentMessage(SentMessageId.BATCH_COUNT, SentMessageType.RESP_SET), payload, self.addr)

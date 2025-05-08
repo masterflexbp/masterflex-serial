@@ -1,13 +1,49 @@
 """Unit tests related to MasterflexSerial protocol."""
 
+import asyncio
 import pytest
-from masterflexserial.message import SentMessage, SentMessageId, SentMessageType,\
+from masterflexserial.message import SentMessage, SentMessageId, SentMessageType, \
     ReceivedMessage
-from masterflexserial.protocol import Decoder
+from masterflexserial.protocol import Decoder, SerialProtocol
+from unittest.mock import Mock, AsyncMock
 
 
 class TestDecoder:
     """Unit tests for the Decode responded message from the pump."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "str_data, expected_buffer", [
+            ("Complete data\r", ""),                 # Delimited message → processed
+            ("Incomplete data", "Incomplete data"),  # No delimiter → stays in buffer
+            ("", ""),                                # Empty input
+        ])
+    async def test_data_received(self, str_data, expected_buffer):
+        """Test that data_received() correctly handles various buffer scenarios."""
+        uut = SerialProtocol(None, None)
+
+        # Mock decode behavior
+        mock_data = Mock()
+        mock_data.decode.return_value = str_data
+
+        uut.client_decode = Mock()  # Mock client_decode to prevent real decoding logic
+        uut.discard_buffer = AsyncMock()  # Mock discard_buffer to inspect call args
+
+        # Call method
+        uut.data_received(mock_data)
+
+        # If discard_buffer should've been triggered
+        if len(expected_buffer) > 0:
+            uut.discard_buffer.assert_called_once()
+            args = uut.discard_buffer.call_args.args
+
+            # Accept either no arguments or an int
+            assert len(args) == 0 or isinstance(args[0], int), (
+                f"discard_buffer should be called with no arguments or an int, got: {args}"
+            )
+
+        # Final buffer check
+        assert uut.buffer == expected_buffer
 
     def test_set_last_message(self):
         """Test set the last message."""
@@ -15,9 +51,24 @@ class TestDecoder:
         uut = Decoder()
         sent_msg = SentMessage(SentMessageId.ENABLE, SentMessageType.RESP_SET, "enable")
         uut.set_last_message(sent_msg)
-        assert uut.last_msg.id == sent_msg.id
-        assert uut.last_msg.msg_type == sent_msg.msg_type
-        assert uut.last_msg.name == sent_msg.name
+        assert uut._last_msg.id == sent_msg.id
+        assert uut._last_msg.msg_type == sent_msg.msg_type
+        assert uut._last_msg.name == sent_msg.name
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "initial_buffer, timeout, expected_buffer", [
+            ("Incomplete data", 1, ""),  # Cleared buffer after timeout
+            ("", 1, "")])  # Empty buffer should remain empty
+    async def test_discard_buffer(self, initial_buffer, timeout, expected_buffer):
+        """Test that discard_buffer() correctly handles various buffer scenarios."""
+
+        uut = SerialProtocol(None, None)
+        uut.buffer = initial_buffer
+        uut._discard_task = asyncio.create_task(uut.discard_buffer(timeout=timeout))
+        await uut._discard_task
+        assert uut.buffer == expected_buffer, f"Expected buffer: '{expected_buffer}', but got: '{uut.buffer}'"
+        assert not hasattr(uut, "_'discard_task"), "_discard_task was not deleted"
 
     @pytest.mark.parametrize(
         "message_text, expected", [

@@ -27,14 +27,18 @@ class Decoder():
 
     def __init__(self, _resp_message=None):
         """Initialize the Decoder module."""
-        self.last_msg = None
+        self._last_msg = None  # Internal variable
 
         # Notify the upper layer a message has been received
         self._resp_message = _resp_message
 
     def set_last_message(self, last_msg: SentMessage):
         """Set the last message to sent to the pump."""
-        self.last_msg = last_msg
+        self._last_msg = last_msg
+
+    def get_last_message(self):
+        """Safely retrieve the last sent message."""
+        return self._last_msg
 
     def _update_message(self, recv_msg: ReceivedMessage):
         """Clear the last_msg that is waiting for response.
@@ -42,7 +46,7 @@ class Decoder():
         Call the upper layer if the callback is set.
         """
 
-        self.last_msg = None
+        self._last_msg = None
         if self._resp_message:
             # Call the the callback function
             self._resp_message(recv_msg)
@@ -167,31 +171,32 @@ class Decoder():
             is available. The _update_message()is called.
         """
 
-        str_data = str_data.decode('utf-8', 'ignore').strip()
+        if isinstance(str_data, bytes):
+            str_data = str_data.decode('utf-8', 'ignore')
 
-        if self.last_msg is None:
+        str_data = str_data.strip()
+
+        if self.get_last_message() is None:
             # There is no message waiting for the response
             # Pump must send the message by itself
             raise Exception("Serial Communication - not expected any input")
 
-        recv_msg = ReceivedMessage(self.last_msg)
+        recv_msg = ReceivedMessage(self.get_last_message())
 
-        if self.last_msg.msg_type == SentMessageType.RESP_SET:
+        if self.get_last_message().msg_type == SentMessageType.RESP_SET:
             # If it's SET command, the expected resp text is only 1 character
             if str_data == ReceivedMessageId.RESP_OK.value:
                 recv_msg.success = True
                 recv_msg.data["result"] = "OK"
-
             elif str_data == ReceivedMessageId.RESP_NO.value:
                 recv_msg.data["result"] = "Invalid"
-
             elif str_data == ReceivedMessageId.RESP_NOT_IN_SERIAL_MODE.value:
                 recv_msg.data["result"] = "Not in Serial Comms mode"
-
             else:
                 recv_msg.data["result"] = "Not a pump message"
 
         else:
+            # Expected response for GET command
             recv_msg.data["result"] = str_data
 
             if recv_msg.data['result'] == ReceivedMessageId.RESP_NOT_IN_SERIAL_MODE.value:
@@ -221,6 +226,48 @@ class Decoder():
                     recv_msg.data = {"result": "data",
                                      "index": int(str_data)}
 
+                elif recv_msg.sent_msg.id == SentMessageId.ON_TIME_FULL:
+                    recv_msg.data = {"result": "data",
+                                     "on-time": str_data,
+                                     "index": "HH:MM:SS.X"}
+
+                elif recv_msg.sent_msg.id == SentMessageId.GET_SOFTWARE_VERSION:
+                    recv_msg.data = {"result": "data",
+                                     "version": str_data}
+
+                elif recv_msg.sent_msg.id == SentMessageId.MODEL_AND_VERSION:
+                    _model, _version = str_data.split(" ")
+                    recv_msg.data = {"result": "data",
+                                     "Model": _model,
+                                     "SerialComm Version": int(_version)}
+
+                elif recv_msg.sent_msg.id == SentMessageId.DISPENSE_STATUS:
+                    _status = {
+                        "+": "running",
+                        "-": "stopped",
+                    }
+                    if _status is None:
+                        return {"result": "error",
+                                "message": "Invalid motor status"}
+                    recv_msg.data = {"result": "data",
+                                     "status": _status[str_data]}
+
+                elif recv_msg.sent_msg.id == SentMessageId.OFF_TIME_FULL:
+                    recv_msg.data = {"result": "data",
+                                     "off-time": str_data,
+                                     "unit": "HH:MM:SS.X"}
+
+                elif recv_msg.sent_msg.id == SentMessageId.ON_TIME_DECISEC:
+                    recv_msg.data = {"result": "data",
+                                     "on-time": int(str_data),
+                                     "unit": "1/10 sec"}
+
+                elif recv_msg.sent_msg.id == SentMessageId.BATCH_COUNT:
+                    _count, _total = str_data.split('/')
+                    recv_msg.data = {"result": "data",
+                                     "count": _count,
+                                     "total": _total}
+
                 else:
                     return {"result": "Invalid",
                             "error": "Pump data is not supported"}
@@ -239,6 +286,7 @@ class SerialProtocol(asyncio.Protocol, Decoder):
         self.buffer = ""
         self.connection_made_callback = _connection_made
         self.connection_lost_callback = _connection_lost
+        self._discard_task = None
 
     def connection_made(self, transport):
         """Notification that a connection is made with the serial transport."""
@@ -248,8 +296,40 @@ class SerialProtocol(asyncio.Protocol, Decoder):
             self.connection_made_callback(self)
 
     def data_received(self, str_data):
-        """When data first received from serial port, in text format."""
-        self.client_decode(str_data)
+        """Handle incoming serial data and ensures only full messages are processed correctly."""
+
+        # Cancel timeout task since new data arrived
+        if self._discard_task is not None:
+            self._discard_task.cancel()
+
+        str_data = str_data.decode('utf-8', 'ignore')  # Ensure decoding to string
+        self.buffer += str_data  # Append new data to the buffer
+
+        while "\r" in self.buffer or "\n" in self.buffer:  # Process only full messages
+            for delimiter in ["\r", "\n"]:
+                if delimiter in self.buffer:
+                    message, self.buffer = self.buffer.split(delimiter, 1)  # Extract one complete message
+                    full_message = message.strip()
+
+                    # Allow processing of single-character responses like '*', '#', '~'
+                    if len(full_message) > 0:
+                        self.client_decode(full_message)
+
+        # If buffer contains data but no newline, start a timeout before discarding it
+        if len(self.buffer) > 0:
+            self._discard_task = asyncio.create_task(self.discard_buffer())
+
+    async def discard_buffer(self, timeout=2):
+        """Clear the buffer if no new data arrives within a given time (default: 2 seconds)."""
+        try:
+            await asyncio.sleep(timeout)
+            self.buffer = ""  # Clear buffer if no new data arrives
+        except asyncio.CancelledError:
+            # Task was cancelled because new data arrived
+            return
+        finally:
+            if self._discard_task is asyncio.current_task():
+                self._discard_task = None
 
     def connection_lost(self, exc):
         """Handle connection loss."""
