@@ -13,17 +13,20 @@ from masterflexserial.message import SentMessage, SentMessageId, SentMessageType
 @pytest.mark.asyncio
 async def test_serial_connection():
     """Verify that the serial client requests to create a serial connection."""
-    with patch.object(serial_asyncio, 'create_serial_connection',
-                      return_value=asyncio.Future()) as create_serial_connection:
+    serial_transport = MagicMock()
+    serial_protocol = MagicMock()
 
+    async def mock_create_serial_connection(*args, **kwargs):
+        return (serial_transport, serial_protocol)
+
+    with patch.object(
+        serial_asyncio,
+        'create_serial_connection',
+        side_effect=mock_create_serial_connection
+    ) as mock_create:
         mflx = MasterflexSerial("/dev/pts/1234", 115200)
-
-        serial_transport = MagicMock()
-        serial_protocol = MagicMock()
-        create_serial_connection.return_value.set_result((serial_transport, serial_protocol))
         await mflx.connect()
-
-        assert create_serial_connection.called
+        assert mock_create.called
 
 
 @pytest.mark.asyncio

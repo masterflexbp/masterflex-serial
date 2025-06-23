@@ -50,7 +50,6 @@ class MasterflexSerial:
 
         # Get event loop in main thread
         self._loop = asyncio.get_event_loop()
-        self._connect_task = None
         self._protocol = None
         self.logger = logging.getLogger(__name__)
 
@@ -58,32 +57,28 @@ class MasterflexSerial:
         """Connect to the serial port."""
 
         try:
-            self._connect_task = await serial_asyncio.create_serial_connection(
+            _, protocol = await serial_asyncio.create_serial_connection(
                 self._loop,
                 self._protocol_factory,
                 self.port,
                 self.baud_rate)
 
+            self._protocol = protocol
+
         except serial.SerialException:
-            self.logger.error('Unable to connect to: ', self.port)
+            self.logger.error("Unable to connect to: %s", self.port)
 
     def disconnect(self):
         """Disconnect from the serial comm transport."""
 
-        if self._connect_task and not self._connect_task.cancelled():
-            # Cancel connection in progress.
-            self._connect_task.cancel()
-            self._connect_task = None
-
         if self._protocol and self._protocol.transport:
-            # Close the serial transport.
-            self.logger.debug('Close Serial connection to %s', self.port)
-            self.protocol.transport.close()
+            self.logger.info('Closing Serial connection to %s', self.port)
+            self._protocol.transport.close()
+            self._protocol = None
 
     def _connection_lost(self):
         """Handle the connection lost."""
         self._protocol = None
-        self.logger.error("Connection loss")
 
     def _connection_made(self,
                          protocol_connection: SerialProtocol):
@@ -92,7 +87,7 @@ class MasterflexSerial:
         Args:
             protocol_connection: use SerialProtocol to make connection.
         """
-        self.logger.info("connection to serial port", self.port, "is made")
+        self.logger.info("Connection to serial port %s is made", self.port)
         self._protocol = protocol_connection
 
     def _protocol_factory(self):
@@ -157,7 +152,15 @@ class MasterflexSerial:
         Returns:
             - {"result": "OK"} for successful command
             - {"result": "Invalid"} for not a valid command
+            - {"result": "Error", "error": "Not connected to pump"}
         """
+        retries = 10
+        while not self.connected and retries > 0:
+            await asyncio.sleep(0.2)
+            retries -= 1
+
+        if not self.connected:
+            return {"result": "Error", "error": "Not connected to pump"}
 
         response = await self._send_message(
             SentMessage(SentMessageId.ENABLE, SentMessageType.RESP_SET), "1", self.addr)
